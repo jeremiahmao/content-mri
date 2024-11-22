@@ -12,3 +12,5 @@ wandb/
 
 #my env
 cmdenv/
+#my run files
+run*
