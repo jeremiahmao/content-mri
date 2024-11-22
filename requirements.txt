@@ -1,5 +1,4 @@
 absl-py
-accelerate==0.12.0
 av 
 blobfile 
 decord 
@@ -23,3 +22,6 @@ transformers==4.29.2
 triton
 wandb
 xformers
+
+
+diffusers[torch]

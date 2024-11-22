@@ -1,5 +1,14 @@
-ckpts/
 *.DS_Store
 .DS_Store
 .idea
 .vscode
+__pycache__/
+
+.cache/
+logs/
+data/
+losses/
+wandb/
+
+#my env
+cmdenv/

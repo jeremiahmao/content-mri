@@ -102,6 +102,7 @@ def convert_to_grid(vid, drange=[-1,1], grid_size=(4,4), normalize=True):
 
     gw, gh = grid_size
     _N, C, T, H, W = vid.shape
+    print(f"SHAPE OF VID {vid.shape}")
     vid = vid.reshape(gh, gw, C, T, H, W)
     vid = vid.transpose(3, 0, 4, 1, 5, 2)
     vid = vid.reshape(T, gh * H, gw * W, C)
