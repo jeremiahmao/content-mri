@@ -22,6 +22,9 @@ import decord
 from einops import rearrange
 from typing import Tuple, List
 
+#for mri
+import nibabel as nib
+
 def resize_crop(
         video: torch.Tensor, resolution: Tuple[int, int]
         ) -> torch.Tensor:
@@ -183,9 +186,129 @@ class VideoFolderDataset(Dataset):
         pixel_values = self._preprocess(pixel_values)
 
         return dict(x=pixel_values, y=class_idx)
+    
+class MRIAsVideoDataset(Dataset):
+    def __init__(
+            self,
+            root: str,
+            resolution: Tuple[int, int] = (192, 144),  # Match sagittal slice resolution
+            num_frames: int = 144,  # Match number of sagittal slices
+            axis: str = "sagittal",  # Treat sagittal plane as "time"
+            label: str = "brain mri scan",  # Fixed label for all samples
+            seed: int = 42,
+            **super_kwargs,
+            ):
+        # Initialize root directory
+        self.path = osp.join(root)
+        self.resolution = resolution
+        self.num_frames = num_frames  # Number of sagittal slices
+        self.axis = axis  # Ensure sagittal is used
+        self.label = label  # Fixed label for all samples
+
+        # Collect and filter MRI samples
+        self.mri_list = []
+        for f in natsorted(os.listdir(self.path)):
+            if f.endswith(('.nii', '.nii.gz')):
+                path = osp.join(self.path, f)
+                if not self._is_invalid_mri(path):  # Skip files with invalid shape
+                    self.mri_list.append(path)
+
+        self.size = len(self.mri_list)
+
+        # Shuffle indices for random sampling
+        random.seed(seed)
+        self.shuffle_indices = [i for i in range(self.size)]
+        random.shuffle(self.shuffle_indices)
+
+    def __len__(self):
+        return self.size
+
+    def _is_invalid_mri(self, path: str) -> bool:
+        """
+        Check if the MRI volume has an invalid shape (data.shape[1] == 256).
+        """
+        try:
+            img = nib.load(path)
+            data = img.get_fdata()
+            if data.shape[1] == 256:  # Skip files with this shape
+                return True
+        except Exception as e:
+            print(f"Error loading file {path}: {e}")
+            return True
+        return False
+
+    def _read_mri(self, path: str) -> torch.Tensor:
+        """
+        Reads, normalizes, and pads an MRI volume, returning a PyTorch tensor.
+        """
+        img = nib.load(path)
+        data = img.get_fdata()
+
+        # Normalize and clip intensities
+        max_value = np.percentile(data, 95)
+        min_value = np.percentile(data, 5)
+        data = np.where(data <= max_value, data, max_value)
+        data = np.where(data >= min_value, data, 0.0)
+        data = (data/(max_value+0.00000001))
+
+        # Initialize padded volume
+        img = np.zeros((144, 192, 144))
+        img[3:3+138, 8:8+176, 3:3+138] = data  # Center the data in the padded volume
+
+        # Normalize to [-1, 1]
+        img = (img / (max_value + 1e-8)) * 2 - 1
+
+        # Convert to PyTorch tensor
+        return torch.from_numpy(img).float()
+
+    def _slice_volume(self, volume: torch.Tensor) -> torch.Tensor:
+        """
+        Extracts sagittal slices from the MRI volume and returns a tensor.
+        """
+        # Sagittal slices: Iterate along the width axis (axis 0)
+        #slices = volume.permute(0, 1, 2) 
+        slices = volume
+        return slices
+
+    def __getitem__(self, idx: int) -> torch.Tensor:
+        """
+        Retrieves an entire MRI volume treated as a video sample and a fixed label.
+        """
+        shuffled_idx = self.shuffle_indices[idx]
+
+        # Preprocess MRI volume using the `_read_mri` function
+        mri_path = self.mri_list[shuffled_idx]
+        volume = self._read_mri(mri_path)  # Process the MRI volume
+
+        # Extract sagittal slices as frames
+        slices = self._slice_volume(volume)
+
+        # Ensure the number of frames matches `self.num_frames`
+        #total_slices = slices.shape[0]
+
+                            # if total_slices < self.num_frames:
+                            #     # Pad with zeros if there are fewer slices
+                            #     padding = self.num_frames - total_slices
+                            #     slices = torch.cat([
+                            #         slices,
+                            #         torch.zeros((padding, *slices.shape[1:]), dtype=torch.float32)
+                            #     ], dim=0)
+                            # elif total_slices > self.num_frames:
+                            #     # Center crop if there are more slices
+                            #     start_idx = (total_slices - self.num_frames) // 2
+                            #     slices = slices[start_idx:start_idx + self.num_frames]
+
+        # Add channel dimension (1) for PyTorch compatibility, then repeat to 3 channels
+        video = slices.unsqueeze(0).repeat(3, 1, 1, 1)  # Add channels and repeat to simulate RGB
+
+        # Return dictionary with x (MRI video) and y (fixed label as a tensor)
+        return dict(x=video, y=self.label)
+
 
 def get_dataset(name: str, **kwargs) -> VideoFolderDataset:
     if name == 'UCF101':
         return VideoFolderDataset(**kwargs)
+    elif name == 'ADNI':
+        return MRIAsVideoDataset(**kwargs)
     else:
         raise NotImplementedError(name)

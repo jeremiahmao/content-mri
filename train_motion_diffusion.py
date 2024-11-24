@@ -227,7 +227,7 @@ if __name__ == "__main__":
     parser.add_argument("--mode", type=str, choices=["pixel"], default="pixel")
 
     parser.add_argument("--results-dir", type=str, default="results")
-    parser.add_argument("--motion-model-config", type=str, choices=list(MotionDiT_models.keys()), default="DiT-B/2")
+    parser.add_argument("--motion-model-config", type=str, choices=list(MotionDiT_models.keys()), default="MotionDiT-B/2")
     parser.add_argument("--keyframe-patch-size", type=int, default=4)
     parser.add_argument("--use-text-embed", action='store_true')
     parser.add_argument("--image-size", nargs='+', type=int, default=[64, 64])
@@ -238,7 +238,6 @@ if __name__ == "__main__":
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--log-every", type=int, default=100)
     parser.add_argument("--ckpt-every", type=int, default=50_000)
-한과영0217
 
     # AE options
     parser.add_argument("--embed-dim", type=int, default=8)

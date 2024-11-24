@@ -23,6 +23,19 @@ from einops.layers.torch import Rearrange
 
 from typing import Tuple
 
+import subprocess
+
+def get_gpu_memory():
+    result = subprocess.run(
+        ["nvidia-smi", "--query-gpu=memory.total,memory.used,memory.free", "--format=csv,nounits,noheader"],
+        stdout=subprocess.PIPE,
+        text=True
+    )
+    memory_info = result.stdout.strip().split("\n")
+    for idx, gpu in enumerate(memory_info):
+        total, used, free = map(int, gpu.split(","))
+        print(f"GPU {idx}: Total: {total} MiB, Used: {used} MiB, Free: {free} MiB")
+
 
 if hasattr(torch.nn.functional, 'scaled_dot_product_attention'):
     ATTENTION_MODE = 'flash'
@@ -67,6 +80,9 @@ class ProjectedAutoencoder(nn.Module):
             patch_size=patch_size,
             channels=channels
             )
+        
+        print(f"triplane_ae: Expected input size: (batch_size, {channels}, {n_frames}, {image_size[0]}, {image_size[1]})")
+        
         self.decoder = TimeSformerDecoder(
             dim=dim,
             image_size=image_size,
@@ -99,6 +115,7 @@ class ProjectedAutoencoder(nn.Module):
 
     def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         # x: b c t h w
+        print(f"triplane_ae: Original size of x: {x.size()}")
         b = x.size(0)
         x = rearrange(x, 'b c t h w -> b t c h w')
         h = self.encoder(x)
@@ -106,6 +123,10 @@ class ProjectedAutoencoder(nn.Module):
         # z_c
         h_xy_logit = rearrange(self.to_logit(h), '(b t) c h w -> b t c h w', b=b)
         h_xy_logit = torch.softmax(h_xy_logit, dim=1)
+
+        print(f"triplane_ae: x shape: {x.shape}")  # Should be (b, t, c, h, w)
+        print(f"triplane_ae: h_xy_logit shape: {h_xy_logit.shape}")  # Should be (b, t, c, h, w) or broadcastable
+
         z_c = rearrange(x * h_xy_logit, 'b t c h w -> b c t h w').sum(dim=2)
 
         # z_m

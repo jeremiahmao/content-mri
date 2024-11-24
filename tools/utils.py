@@ -109,6 +109,7 @@ def convert_to_grid(vid, drange=[-1,1], grid_size=(4,4), normalize=True):
 
     return vid
 
+#return logger, checkpoint_dir, i3d
 def get_logger(rank, args, device, exp_name="ProjectedAutoencoder"):
     # Setup an experiment folder:
     if rank == 0:
@@ -123,9 +124,15 @@ def get_logger(rank, args, device, exp_name="ProjectedAutoencoder"):
         # Stores saved model checkpoints
         checkpoint_dir = f"{experiment_dir}/checkpoints"
         os.makedirs(checkpoint_dir, exist_ok=True)
+        
+        # create logger
         logger = create_logger(experiment_dir)
-        logger.info(f"Experiment dassertirectory created at {experiment_dir}")
+        logger.info(f"Experiment directory created at {experiment_dir}")
+
+        #wandb
         wandb.init(project=model_string_name)
+
+        #load pretrained
         i3d = load_i3d_pretrained().to(device)
     else:
         logger = create_logger(None)
@@ -133,21 +140,20 @@ def get_logger(rank, args, device, exp_name="ProjectedAutoencoder"):
 
     return logger, checkpoint_dir, i3d
 
+#return autoenc, mdiff_model, cdiff_model, latent_models_dict
 def get_models(args, logger, mode='autoenc'):
     dist.barrier()
     autoenc, mdiff_model, cdiff_model, latent_models_dict = None, None, None, dict()
 
     # Autoencoder
-    # TODO(sihyun): adjust hyperparameters
     input_size = (
-        args.image_size if args.mode == 'pixel' 
-        else (args.image_size[0] // 8, args.image_size[0] // 8)
+        args.image_size if args.mode == 'pixel' else (args.image_size[0] // 8, args.image_size[0] // 8)
         )
     autoenc = ProjectedAutoencoder(
         dim=384,
         image_size=input_size,
         patch_size=2,
-        channels=4 if 'latent' == args.mode else 3,
+        channels=4 if 'latent' == args.mode else 3,#else 1 if args.dataset_name=='ADNI'
         n_frames=args.n_frames,
         embed_dim=args.embed_dim,
         depth=8,
@@ -159,7 +165,7 @@ def get_models(args, logger, mode='autoenc'):
 
     if mode != 'autoenc':
         mdiff_model = MotionDiT_models[args.motion_model_config](
-            input_size=(16, input_size[0] + input_size[1]),
+            input_size=(16, input_size[0]),
             keyframe_channel=4 if 'latent' == args.mode else 3,
             keyframe_patch_size=args.keyframe_patch_size,
             )
@@ -193,7 +199,7 @@ def get_models(args, logger, mode='autoenc'):
     dist.barrier()
     return autoenc, mdiff_model, cdiff_model, latent_models_dict
 
-
+#return criterion, opt, scaler
 def get_loss_optimizer(model, args, device, mode):
     # Optimization related
     if mode == "autoenc":
@@ -212,7 +218,8 @@ def get_loss_optimizer(model, args, device, mode):
         opt = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
     dist.barrier()
 
-    scaler = GradScaler()
+    #scaler = GradScaler()
+    scaler = torch.amp.GradScaler("cuda", init_scale=2.**16, growth_factor=2.0, backoff_factor=0.5, growth_interval=2000, enabled=True)
 
     return criterion, opt, scaler
 

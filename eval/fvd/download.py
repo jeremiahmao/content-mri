@@ -18,7 +18,7 @@ import os
 import torch
 import gdown
 
-def download(id, fname, root=os.path.expanduser('~/.cache/video-diffusion')):
+def download(id, fname, root=os.path.expanduser('.cache/video-diffusion')):
     os.makedirs(root, exist_ok=True)
     destination = os.path.join(root, fname)
 

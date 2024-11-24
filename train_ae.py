@@ -24,16 +24,14 @@ from tools.utils import *
 torch.backends.cuda.matmul.allow_tf32 = False
 torch.backends.cudnn.allow_tf32 = True
 
-
 def main(args):
-    assert (torch.cuda.is_available(),
-            "Training currently requires at least one GPU.")
-    if args.dataset_name == 'webvid':
-        raise NotImplementedError('Current code only support training on UCF-101.')
-    # Setup DDP:
+
+    #assert GPU available
+    assert torch.cuda.is_available(), "Training currently requires at least one GPU."
+    
+    # Set up DDP
     dist.init_process_group("nccl")
-    assert (args.global_batch_size % dist.get_world_size() == 0,
-            f"Batch size must be divisible by world size.")
+    assert args.global_batch_size % dist.get_world_size() == 0, f"Batch size must be divisible by world size."
     rank = dist.get_rank()
     device = rank % torch.cuda.device_count()
     seed = args.global_seed * dist.get_world_size() + rank
@@ -42,13 +40,24 @@ def main(args):
     print(f"Starting rank={rank}, seed={seed}, world_size={dist.get_world_size()}.")
 
     # load model
-    sd_vae = None
+    sd_vae = None #set up for stable diffusion VAE model
+
+    #get logger, checkpoint, and pretrained model
     logger, checkpoint_dir, i3d = get_logger(rank, args, device)
-    autoenc, _, _, sd_dict = get_models(args, logger)
+    
+    autoenc, _, _, sd_dict = get_models(args, logger) #sd_dict contains pretrained vae and tokenizer
+
+    #move models to device
     autoenc = autoenc.to(device)
     if "sd_vae" in sd_dict.keys():
+        print("main: sd_vae available")
         sd_vae = sd_dict["sd_vae"].to(device)
+    else: print("main: sd_vae NOT available")
+
+    #get loss fn, optimizer, scaler
     criterion, opt, scaler = get_loss_optimizer(autoenc, args, device, mode="autoenc")
+
+    #check for checkpoints to continue from
     autoenc_path = (
         f"./ckpts/{args.dataset_name}/{args.mode}/autoencoder/last.pt" if args.resume else None
     )
@@ -70,12 +79,16 @@ def main(args):
         sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
         for train_batch in loader:
+            
             x = train_batch["x"].to(device)
             b = x.size(0)
             if rank == 0 and len(test_batches) * b < eval_num_videos:
                 test_batches.append(dict(x=x.cpu()))
-            with autocast():
+            with torch.autocast(device_type='cuda', dtype=torch.float16, cache_enabled=True): #with autocast()
+
                 x = maybe_pixels_to_sd_latents(x, sd_vae, args.scale_factor)
+                print(f"main: x after to latent {x.shape}")
+
                 x_recon, _ = autoenc(x)
                 x_recon = rearrange(x_recon, '(b t) c h w -> b c t h w', b=b)
                 loss = (
@@ -161,7 +174,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--data-path", type=str, required=True)
-    parser.add_argument("--dataset-name", type=str, choices=["UCF101", "webvid"], default="UCF101")
+    parser.add_argument("--dataset-name", type=str, choices=["UCF101", "ADNI"], default="UCF101")
     parser.add_argument("--mode", type=str, choices=["pixel", "latent"], default="pixel")
     parser.add_argument("--scale-factor", type=float, default=0.18215)
     parser.add_argument("--results-dir", type=str, default="./result")

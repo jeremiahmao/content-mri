@@ -123,7 +123,7 @@ def eval_with_visualize(
             break
         curr_samples += test_batch["x"].size(0)
         if content_pipeline == None and motion_pipeline == None:
-            with torch.no_grad(), autocast():
+            with torch.no_grad(), torch.autocast(device_type='cuda', dtype=torch.float16):#autocast() deprecated
                 # reconstruction
                 x = test_batch["x"].to(device)
                 x = maybe_pixels_to_sd_latents(x, sd_vae, scale_factor)

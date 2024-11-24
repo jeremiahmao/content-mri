@@ -234,7 +234,7 @@ if __name__ == "__main__":
 
     # Motion model options
     parser.add_argument("--num-classes", type=int, default=101)
-    parser.add_argument("--motion-model-config", type=str, choices=list(MotionDiT_models.keys()), default="DiT-L/2")
+    parser.add_argument("--motion-model-config", type=str, choices=list(MotionDiT_models.keys()), default="MotionDiT-L/2")
     parser.add_argument("--keyframe-patch-size", type=int, default=4)
     parser.add_argument("--results-dir", type=str, default="results")
 
